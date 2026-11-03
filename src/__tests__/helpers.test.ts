@@ -53,4 +53,20 @@ posixOnly('execPromise', () => {
     }
     expect(isAlive(grandchildPid)).toBe(false);
   }, 15000);
+
+  it('kills the process tree immediately when the abort signal fires', async () => {
+    const controller = new AbortController();
+    const start = Date.now();
+    const promise = execPromise('sleep 30 & echo $!; wait', 60000, controller.signal);
+    setTimeout(() => controller.abort(), 200);
+
+    await expect(promise).rejects.toMatchObject({ aborted: true, killed: true });
+    expect(Date.now() - start).toBeLessThan(5000);
+  }, 15000);
+
+  it('does not start the command when the signal is already aborted', async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(execPromise('echo should-not-run', 5000, controller.signal)).rejects.toMatchObject({ aborted: true });
+  });
 });

@@ -57,11 +57,20 @@ const MAX_OUTPUT_BYTES = 1024 * 1024 * 10;
  * did not spawn, so every timed-out sync leaked a set of <defunct> zombies.
  * Killing the whole process group with kill(-pid) terminates the entire tree.
  */
-export function execPromise(command: string, timeoutMs?: number): Promise<{ stdout: string; stderr: string }> {
+export function execPromise(
+  command: string,
+  timeoutMs?: number,
+  signal?: AbortSignal,
+): Promise<{ stdout: string; stderr: string }> {
   const timeout = timeoutMs ?? getTimeoutMs();
   const useProcessGroup = process.platform !== 'win32';
 
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(Object.assign(new Error(`Cancelled before start: ${command}`), { stdout: '', stderr: '', aborted: true }));
+      return;
+    }
+
     const child = spawn(command, {
       shell: true,
       detached: useProcessGroup,
@@ -71,6 +80,7 @@ export function execPromise(command: string, timeoutMs?: number): Promise<{ stdo
     let stdout = '';
     let stderr = '';
     let timedOut = false;
+    let aborted = false;
     let killTimer: NodeJS.Timeout | undefined;
 
     const killTree = (signal: NodeJS.Signals): void => {
@@ -92,6 +102,15 @@ export function execPromise(command: string, timeoutMs?: number): Promise<{ stdo
       killTimer = setTimeout(() => killTree('SIGKILL'), KILL_GRACE_MS);
     }, timeout);
 
+    // Stop/Skip in the UI: kill the whole process tree right away instead of letting the
+    // engine run to completion in the background.
+    const onAbort = (): void => {
+      aborted = true;
+      killTree('SIGTERM');
+      killTimer = setTimeout(() => killTree('SIGKILL'), KILL_GRACE_MS);
+    };
+    signal?.addEventListener('abort', onAbort, { once: true });
+
     const capture = (current: string, chunk: Buffer): string =>
       current.length >= MAX_OUTPUT_BYTES ? current : current + chunk.toString();
     child.stdout?.on('data', (chunk: Buffer) => {
@@ -102,6 +121,7 @@ export function execPromise(command: string, timeoutMs?: number): Promise<{ stdo
     });
 
     const cleanup = (): void => {
+      signal?.removeEventListener('abort', onAbort);
       clearTimeout(timer);
       if (killTimer) clearTimeout(killTimer);
     };
@@ -115,6 +135,12 @@ export function execPromise(command: string, timeoutMs?: number): Promise<{ stdo
     // i.e. once every descendant holding the pipes is gone as well.
     child.on('close', (code, signal) => {
       cleanup();
+      if (aborted) {
+        const error = new Error(`Cancelled: ${command}`) as ExecError;
+        Object.assign(error, { stdout, stderr, code, signal, killed: true, aborted: true });
+        reject(error);
+        return;
+      }
       if (timedOut) {
         const error = new Error(
           `Process timed out after ${timeout / 1000}s and was killed (${signal ?? `exit ${code}`}): ${command}`,

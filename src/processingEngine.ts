@@ -1,14 +1,17 @@
 import EventEmitter from 'events';
-import { ScanConfig, getScanConfig } from './config';
+import { existsSync, unlinkSync } from 'fs';
+import { ScanConfig, getScanConfig, getSuffixConfig } from './config';
 import { findAllSrtFiles } from './findAllSrtFiles';
 import { findMatchingVideoFile } from './findMatchingVideoFile';
 import { generateFfsubsyncSubtitles } from './generateFfsubsyncSubtitles';
 import { generateAutosubsyncSubtitles } from './generateAutosubsyncSubtitles';
 import { generateAlassSubtitles } from './generateAlassSubtitles';
+import { buildOutputPath } from './helpers';
 import { StateManager } from './stateManager';
 
 export class ProcessingEngine extends EventEmitter {
   private cancelledFiles: Set<string> = new Set();
+  private activeRuns: Map<string, AbortController> = new Map();
   private maxConcurrent: number;
   private enabledEngines: string[];
   private logBuffer: string[] = [];
@@ -122,17 +125,19 @@ export class ProcessingEngine extends EventEmitter {
 
       const startTime = Date.now();
       let result;
+      const controller = new AbortController();
+      this.activeRuns.set(srtPath, controller);
 
       try {
         switch (engine) {
           case 'ffsubsync':
-            result = await generateFfsubsyncSubtitles(srtPath, videoPath);
+            result = await generateFfsubsyncSubtitles(srtPath, videoPath, controller.signal);
             break;
           case 'autosubsync':
-            result = await generateAutosubsyncSubtitles(srtPath, videoPath);
+            result = await generateAutosubsyncSubtitles(srtPath, videoPath, controller.signal);
             break;
           case 'alass':
-            result = await generateAlassSubtitles(srtPath, videoPath);
+            result = await generateAlassSubtitles(srtPath, videoPath, controller.signal);
             break;
           default:
             continue;
@@ -176,6 +181,13 @@ export class ProcessingEngine extends EventEmitter {
           result: { ...result, duration },
         });
       } catch (error) {
+        if (controller.signal.aborted) {
+          // Stopped or skipped from the UI: not a failure, and drop any half-written output.
+          this.removePartialOutput(srtPath, engine);
+          this.log(`[${new Date().toISOString()}] Cancelled ${engine} (stopped by user): ${fileName}`);
+          this.emit('file:skipped', { srtPath, reason: 'cancelled' });
+          return;
+        }
         // Engine attempted to run (not skipped), so not all are skipped
         allEnginesSkipped = false;
 
@@ -192,6 +204,8 @@ export class ProcessingEngine extends EventEmitter {
             duration,
           },
         });
+      } finally {
+        this.activeRuns.delete(srtPath);
       }
     }
 
@@ -209,12 +223,25 @@ export class ProcessingEngine extends EventEmitter {
 
   skipFile(filePath: string): void {
     this.cancelledFiles.add(filePath);
+    this.activeRuns.get(filePath)?.abort();
     this.emit('file:skip_requested', { filePath });
   }
 
   stopAllProcessing(allFiles: string[]): void {
     this.log(`[${new Date().toISOString()}] Stop requested - cancelling all remaining files`);
     allFiles.forEach((file) => this.cancelledFiles.add(file));
+    // Kill whatever engine is running right now so the run ends immediately.
+    this.activeRuns.forEach((controller) => controller.abort());
+  }
+
+  private removePartialOutput(srtPath: string, engine: string): void {
+    try {
+      const suffix = getSuffixConfig()[engine as keyof ReturnType<typeof getSuffixConfig>] || engine;
+      const outputPath = buildOutputPath(srtPath, suffix);
+      if (existsSync(outputPath)) unlinkSync(outputPath);
+    } catch {
+      // Nothing to clean up.
+    }
   }
 
   reset(): void {

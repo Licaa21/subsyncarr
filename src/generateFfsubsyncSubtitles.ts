@@ -2,7 +2,11 @@ import { buildOutputPath, execPromise, ProcessingResult } from './helpers';
 import { existsSync } from 'fs';
 import { getSuffixConfig } from './config';
 
-export async function generateFfsubsyncSubtitles(srtPath: string, videoPath: string): Promise<ProcessingResult> {
+export async function generateFfsubsyncSubtitles(
+  srtPath: string,
+  videoPath: string,
+  signal?: AbortSignal,
+): Promise<ProcessingResult> {
   const outputPath = buildOutputPath(srtPath, getSuffixConfig().ffsubsync);
 
   // Check if synced subtitle already exists
@@ -18,7 +22,7 @@ export async function generateFfsubsyncSubtitles(srtPath: string, videoPath: str
   try {
     const command = `ffsubsync "${videoPath}" -i "${srtPath}" -o "${outputPath}"`;
     console.log(`${new Date().toLocaleString()} Processing: ${command}`);
-    const { stdout, stderr } = await execPromise(command);
+    const { stdout, stderr } = await execPromise(command, undefined, signal);
     return {
       success: true,
       message: `Successfully processed: ${outputPath}`,
@@ -26,6 +30,7 @@ export async function generateFfsubsyncSubtitles(srtPath: string, videoPath: str
       stderr: stderr || undefined,
     };
   } catch (error) {
+    if ((error as { aborted?: boolean }).aborted) throw error;
     const errorMessage = error instanceof Error ? error.message : String(error);
     const isTimeout = errorMessage.includes('SIGTERM') || errorMessage.includes('timed out');
 
