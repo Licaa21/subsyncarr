@@ -8,6 +8,7 @@ export class ProcessingCoordinator {
   private processingPromise: Promise<void> | null = null;
   private enabledEngines: string[];
   private currentRunId: string | null = null;
+  private lastStartedRunId: string | null = null;
   private stopRequested: boolean = false;
 
   constructor(
@@ -31,6 +32,7 @@ export class ProcessingCoordinator {
 
     this.engine.on('run:files_found', (files: string[], skippedCount: number) => {
       this.currentRunId = this.stateManager.startRun(files.length, this.enabledEngines, skippedCount);
+      this.lastStartedRunId = this.currentRunId;
 
       // Add all files to database as pending (video matching happens during processing)
       for (const filePath of files) {
@@ -113,6 +115,7 @@ export class ProcessingCoordinator {
     console.log(`[${new Date().toISOString()}] Starting new processing run...`);
     this.engine.reset();
     this.currentRunId = null;
+    this.lastStartedRunId = null;
     this.stopRequested = false;
 
     const ac = new AbortController();
@@ -146,12 +149,12 @@ export class ProcessingCoordinator {
       const runId = await Promise.race([
         runStartedPromise,
         processPromise.then(() => {
-          // Process finished. If run started, we should have the ID.
-          const run = this.stateManager.getCurrentRun();
-          if (!run) {
+          // Process finished. If a run was started we have its ID, even when it was so short
+          // (e.g. nothing left to sync) that it already finished and was cleared.
+          if (!this.lastStartedRunId) {
             throw new Error('Process completed without starting a run');
           }
-          return run.id;
+          return this.lastStartedRunId;
         }),
       ]);
 
