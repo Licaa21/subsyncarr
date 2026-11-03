@@ -7,34 +7,115 @@ class SubsyncarrPlusClient {
     this.reconnectInterval = 3000;
     this.historyCache = {}; // Cache run data for file lookups
     this.selectedPaths = [];
+    this.lastMessageAt = Date.now();
+    this.reconnectTimer = null;
+    this.polling = false;
 
     this.initWebSocket();
     this.setupEventHandlers();
     this.fetchInitialState();
     this.fetchConfigStatus();
+    this.startLiveness();
   }
 
   initWebSocket() {
-    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    this.ws = new WebSocket(`${protocol}//${location.host}${API_BASE}/ws`);
+    // Drop any previous socket quietly so a late close event can't spawn a second one.
+    if (this.ws) {
+      this.ws.onopen = this.ws.onmessage = this.ws.onclose = this.ws.onerror = null;
+      try {
+        this.ws.close();
+      } catch (e) {
+        /* already closed */
+      }
+    }
+    clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = null;
 
-    this.ws.onopen = () => {
+    const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+    const ws = new WebSocket(`${protocol}//${location.host}${API_BASE}/ws`);
+    this.ws = ws;
+
+    ws.onopen = () => {
       console.log('WebSocket connected');
+      this.lastMessageAt = Date.now();
     };
 
-    this.ws.onmessage = (event) => {
+    ws.onmessage = (event) => {
+      this.lastMessageAt = Date.now();
       const msg = JSON.parse(event.data);
+      if (msg.type === 'ping') return; // server heartbeat
       this.handleMessage(msg);
     };
 
-    this.ws.onclose = () => {
+    ws.onclose = () => {
       console.log('WebSocket disconnected, reconnecting...');
-      setTimeout(() => this.initWebSocket(), this.reconnectInterval);
+      this.scheduleReconnect();
     };
 
-    this.ws.onerror = (error) => {
+    ws.onerror = (error) => {
       console.error('WebSocket error:', error);
     };
+  }
+
+  scheduleReconnect() {
+    if (this.reconnectTimer) return;
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.initWebSocket();
+    }, this.reconnectInterval);
+  }
+
+  // Keeps the page live even when the WebSocket silently dies (proxy idle timeout,
+  // sleeping device, flaky network): a watchdog restarts a socket that went quiet,
+  // a light poll re-syncs state while a run is active or the socket is down, and a
+  // 1s ticker updates the elapsed time of the engine currently working.
+  startLiveness() {
+    setInterval(() => {
+      const open = this.ws && this.ws.readyState === WebSocket.OPEN;
+      if (open && Date.now() - this.lastMessageAt > 45000) {
+        console.warn('No data from server for 45s, reconnecting WebSocket');
+        this.ws.close();
+        this.scheduleReconnect();
+      } else if (!open && !this.reconnectTimer && (!this.ws || this.ws.readyState === WebSocket.CLOSED)) {
+        this.scheduleReconnect();
+      }
+    }, 5000);
+
+    setInterval(() => this.pollStatus(), 5000);
+
+    setInterval(() => this.tickElapsed(), 1000);
+  }
+
+  async pollStatus() {
+    const open = this.ws && this.ws.readyState === WebSocket.OPEN;
+    if (this.polling || (open && !this.state.isRunning)) return;
+    this.polling = true;
+    try {
+      const response = await fetch(`${API_BASE}/api/status`);
+      if (!response.ok) return;
+      const wasRunning = this.state.isRunning;
+      this.state = await response.json();
+      this.render();
+      if (wasRunning && !this.state.isRunning) this.fetchHistory();
+    } catch (error) {
+      /* offline for a moment; the next poll retries */
+    } finally {
+      this.polling = false;
+    }
+  }
+
+  formatElapsed(ms) {
+    const total = Math.max(0, Math.floor(ms / 1000));
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const sec = String(total % 60).padStart(2, '0');
+    return h > 0 ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
+  }
+
+  tickElapsed() {
+    document.querySelectorAll('.engine-elapsed[data-since]').forEach((el) => {
+      el.textContent = this.formatElapsed(Date.now() - Number(el.dataset.since));
+    });
   }
 
   handleMessage(msg) {
@@ -595,8 +676,11 @@ class SubsyncarrPlusClient {
     // Use engine-level progress for more granular updates
     const percent = currentRun.total_engines > 0 ? (currentRun.completed_engines / currentRun.total_engines) * 100 : 0;
     document.getElementById('progressFill').style.width = `${percent}%`;
+    document.getElementById('progressFill').classList.toggle('active', this.state.isRunning && percent < 100);
     document.getElementById('progressText').textContent =
       `${currentRun.completed} / ${currentRun.total_files} files (${Math.round(percent)}%)`;
+    document.getElementById('progressText').title =
+      `${currentRun.completed_engines} / ${currentRun.total_engines} engine steps done`;
   }
 
   renderFiles() {
@@ -616,7 +700,11 @@ class SubsyncarrPlusClient {
             </button>
           </div>
           <div class="engine-status">
-            ${file.current_engine ? `⚙️ Working on ${file.current_engine}` : 'Starting...'}
+            ${
+              file.current_engine
+                ? `⚙️ Working on ${file.current_engine} · <span class="engine-elapsed" data-since="${file.updated_at || Date.now()}">${this.formatElapsed(Date.now() - (file.updated_at || Date.now()))}</span>`
+                : 'Starting...'
+            }
           </div>
           ${this.renderEngineResults(engines)}
         </div>

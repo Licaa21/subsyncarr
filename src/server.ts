@@ -150,7 +150,6 @@ export class SubsyncarrPlusServer {
 
     // Get current status
     router.get('/api/status', (req, res) => {
-      console.log(`[${new Date().toISOString()}] GET /api/status`);
       const currentRun = this.stateManager.getCurrentRun();
       res.json({
         currentRun,
@@ -324,9 +323,37 @@ export class SubsyncarrPlusServer {
   }
 
   private setupWebSocket() {
+    // Heartbeat: a single engine run can take minutes without any state change, and
+    // reverse proxies drop idle WebSockets silently. Ping every 20s (protocol-level
+    // ping plus a small text frame, which every proxy counts as traffic) and drop
+    // clients that stopped answering so the browser notices and reconnects.
+    const heartbeat = setInterval(() => {
+      this.clients.forEach((client) => {
+        const c = client as WebSocket & { isAlive?: boolean };
+        if (c.isAlive === false) {
+          c.terminate();
+          this.clients.delete(client);
+          return;
+        }
+        c.isAlive = false;
+        try {
+          c.ping();
+          if (c.readyState === WebSocket.OPEN) c.send(JSON.stringify({ type: 'ping', ts: Date.now() }));
+        } catch {
+          // socket already closing; the close handler cleans up
+        }
+      });
+    }, 20000);
+    heartbeat.unref();
+    this.wss.on('close', () => clearInterval(heartbeat));
+
     this.wss.on('connection', (ws) => {
       console.log(`[${new Date().toISOString()}] WebSocket client connected (total: ${this.clients.size + 1})`);
       this.clients.add(ws);
+      (ws as WebSocket & { isAlive?: boolean }).isAlive = true;
+      ws.on('pong', () => {
+        (ws as WebSocket & { isAlive?: boolean }).isAlive = true;
+      });
 
       // Send initial state
       const currentRun = this.stateManager.getCurrentRun();
