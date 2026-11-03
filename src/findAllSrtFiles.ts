@@ -31,7 +31,7 @@ export interface ScanResult {
 }
 
 export async function findAllSrtFiles(config: ScanConfig): Promise<ScanResult> {
-  const engines = process.env.INCLUDE_ENGINES?.split(',') || ['ffsubsync', 'autosubsync', 'alass'];
+  const engines = process.env.INCLUDE_ENGINES?.split(',') || ['ffsubsync', 'autosubsync'];
   const languages =
     process.env.SYNC_LANGUAGES?.split(',')
       .map((l) => l.trim())

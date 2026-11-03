@@ -36,7 +36,7 @@ export class StateManager extends EventEmitter {
   }
 
   // Run management
-  startRun(totalFiles: number, enabledEngines: string[] = ['ffsubsync', 'autosubsync', 'alass'], alreadySyncedCount: number = 0): string {
+  startRun(totalFiles: number, enabledEngines: string[] = ['ffsubsync', 'autosubsync'], alreadySyncedCount: number = 0): string {
     const runId = randomUUID();
     this.db.createRun(runId, totalFiles);
 

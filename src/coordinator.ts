@@ -14,7 +14,7 @@ export class ProcessingCoordinator {
     private engine: ProcessingEngine,
     private stateManager: StateManager,
   ) {
-    this.enabledEngines = process.env.INCLUDE_ENGINES?.split(',') || ['ffsubsync', 'autosubsync', 'alass'];
+    this.enabledEngines = process.env.INCLUDE_ENGINES?.split(',') || ['ffsubsync', 'autosubsync'];
 
     // Inject stateManager into engine so it can check skip status
     this.engine.stateManager = this.stateManager;

@@ -6,7 +6,7 @@ import { generateAlassSubtitles } from './generateAlassSubtitles';
 
 export const processSrtFile = async (srtFile: string) => {
   const videoFile = findMatchingVideoFile(srtFile);
-  const includeEngines = process.env.INCLUDE_ENGINES?.split(',') || ['ffsubsync', 'autosubsync', 'alass'];
+  const includeEngines = process.env.INCLUDE_ENGINES?.split(',') || ['ffsubsync', 'autosubsync'];
 
   if (videoFile) {
     if (includeEngines.includes('ffsubsync')) {

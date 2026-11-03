@@ -55,7 +55,7 @@ services:
       - SCAN_PATHS=/movies,/tv # Comma-separated paths to scan
       - EXCLUDE_PATHS=/movies/temp,/tv/downloads # Optional: exclude directories
       - MAX_CONCURRENT_SYNC_TASKS=1 # Number of parallel processing tasks
-      - INCLUDE_ENGINES=ffsubsync,autosubsync,alass # Engines to use
+      - INCLUDE_ENGINES=ffsubsync,autosubsync # Engines to use (alass is opt-in, see Fork notes)
 ```
 
 2. **Update the configuration:**
@@ -104,7 +104,7 @@ docker run -d \
 | `SYNC_LANGUAGES`            | _(none)_                      | Comma-separated language codes to sync (e.g., `en,de`). Only syncs subtitles with matching language tags in the filename (e.g., `movie.en.srt`). If not set, all subtitles are synced. |
 | `CRON_SCHEDULE`             | `0 0 * * *`                   | Cron expression for sync schedule (daily at midnight), or `disabled` to turn off |
 | `MAX_CONCURRENT_SYNC_TASKS` | `1`                           | Number of subtitle files to process in parallel (higher = faster but more CPU)   |
-| `INCLUDE_ENGINES`           | `ffsubsync,autosubsync,alass` | Which sync engines to use (comma-separated)                                      |
+| `INCLUDE_ENGINES`           | `ffsubsync,autosubsync`       | Which sync engines to use (comma-separated; `alass` is opt-in)                                    |
 | `FFSUBSYNC_SUFFIX`          | `ffsubsync`                   | Custom suffix for ffsubsync output files (e.g., `sdh` → `movie.en.sdh.srt`)     |
 | `AUTOSUBSYNC_SUFFIX`        | `autosubsync`                 | Custom suffix for autosubsync output files (e.g., `cc` → `movie.en.cc.srt`)     |
 | `ALASS_SUFFIX`              | `alass`                       | Custom suffix for alass output files (e.g., `forced` → `movie.en.forced.srt`)   |
@@ -316,3 +316,7 @@ This fork merges several open upstream PRs and adds fixes:
 - `bin/ffprobe` wrapper: alass 2.0.0 fails with ``missing field `codec_long_name` `` on MKVs that embed many fonts (typical for anime releases). The wrapper adds the missing field so alass can run.
 
 Published image: `ghcr.io/licaa21/subsyncarr:latest`.
+
+### alass is off by default
+
+alass no longer crashes on MKVs with font attachments (the bundled `ffprobe` wrapper fixes that), but on real files its output is unreliable: on one library about half of the alass results disagreed with ffsubsync and autosubsync by many seconds (it splits the subtitle into segments and shifts each by a different amount; its constant-shift mode `--no-split` was also off). It therefore stays out of the default `INCLUDE_ENGINES`. Add `alass` to the list yourself only if you want it and check the results.
