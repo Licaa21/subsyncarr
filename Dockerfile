@@ -70,6 +70,10 @@ COPY --from=builder --chown=node:node /home/node/.local/bin/alass /home/node/.lo
 # Copy Python tools from builder
 COPY --from=builder --chown=node:node /home/node/.local /home/node/.local
 
+# bin/ffprobe is a wrapper (see the file) that fixes alass crashing on MKVs with
+# font attachments; /home/node/.local/bin comes first on PATH.
+RUN chmod +x /home/node/.local/bin/ffprobe /home/node/.local/bin/alass
+
 # Create data directory
 RUN mkdir -p /app/data && chown node:node /app/data
 

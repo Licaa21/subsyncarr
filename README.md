@@ -303,3 +303,15 @@ Issues and pull requests are welcome! Please report bugs or suggest features via
 ## License
 
 See LICENSE file for details.
+
+## Fork notes
+
+This fork merges several open upstream PRs and adds fixes:
+
+- Generated outputs (`.ffsubsync` / `.autosubsync` / `.alass`) are never re-synced, even when their engine is disabled (upstream PR #66).
+- Timed-out engines are killed with their whole process tree, and `tini` runs as PID 1 (upstream PR #67).
+- `.ts` videos are matched (upstream PR #68), mobile CSS (#64) and `BASE_PATH` for reverse-proxy subpaths (#63).
+- Dark mode (follows the OS/browser setting).
+- `bin/ffprobe` wrapper: alass 2.0.0 fails with ``missing field `codec_long_name` `` on MKVs that embed many fonts (typical for anime releases). The wrapper adds the missing field so alass can run.
+
+Published image: `ghcr.io/licaa21/subsyncarr:latest`.

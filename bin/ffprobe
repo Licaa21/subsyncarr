@@ -1,0 +1,34 @@
+#!/usr/bin/env python3
+"""ffprobe wrapper for alass.
+
+alass 2.0.0 runs `ffprobe -of json` on the reference video and requires every
+stream to carry a `codec_long_name`. Some MKV attachment streams (embedded fonts,
+common in anime releases) have none, so alass aborts with
+"missing field `codec_long_name`" before it even starts. This wrapper calls the
+real ffprobe and fills in a default for any stream that lacks the field. Every
+other invocation is passed through untouched.
+"""
+import json
+import os
+import subprocess
+import sys
+
+REAL = next(
+    (p for p in ("/usr/bin/ffprobe", "/usr/local/bin/ffprobe") if os.path.exists(p)),
+    "ffprobe",
+)
+
+result = subprocess.run([REAL] + sys.argv[1:], capture_output=True)
+out = result.stdout
+try:
+    data = json.loads(out)
+    if isinstance(data, dict) and isinstance(data.get("streams"), list):
+        for stream in data["streams"]:
+            stream.setdefault("codec_long_name", "unknown")
+        out = (json.dumps(data, indent=4) + "\n").encode()
+except Exception:
+    pass  # not JSON output: pass through unchanged
+
+sys.stdout.buffer.write(out)
+sys.stderr.buffer.write(result.stderr)
+sys.exit(result.returncode)
