@@ -67,10 +67,16 @@ export function getScanConfig(): ScanConfig {
 }
 
 export function getRetentionConfig(): RetentionConfig {
+  // RETENTION_KEEP_RUNS_HOURS (e.g. 6 or 12) takes precedence over RETENTION_KEEP_RUNS_DAYS and
+  // allows short retention for setups that scan every few minutes. Fractions of a day are fine.
+  const keepHours = parseFloat(process.env.RETENTION_KEEP_RUNS_HOURS || '');
+  const useHours = Number.isFinite(keepHours) && keepHours >= 0;
+
   return {
-    keepRunsDays: parseInt(process.env.RETENTION_KEEP_RUNS_DAYS || '30', 10),
+    keepRunsDays: useHours ? keepHours / 24 : parseInt(process.env.RETENTION_KEEP_RUNS_DAYS || '30', 10),
     trimLogsDays: parseInt(process.env.RETENTION_TRIM_LOGS_DAYS || '7', 10),
     maxLogSizeBytes: parseInt(process.env.RETENTION_MAX_LOG_SIZE || '10000', 10),
-    cleanupIntervalHours: parseInt(process.env.RETENTION_CLEANUP_INTERVAL_HOURS || '24', 10),
+    // Short retention needs frequent cleanup, so default to hourly when hours are used.
+    cleanupIntervalHours: parseInt(process.env.RETENTION_CLEANUP_INTERVAL_HOURS || (useHours ? '1' : '24'), 10),
   };
 }

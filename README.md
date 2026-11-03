@@ -125,6 +125,7 @@ docker run -d \
 | `DB_PATH`                          | `/app/data/subsyncarr.db` | SQLite database location                    |
 | `LOG_BUFFER_SIZE`                  | `1000`                         | Ring buffer size for in-memory logs         |
 | `RETENTION_KEEP_RUNS_DAYS`         | `30`                           | Keep complete runs for N days               |
+| `RETENTION_KEEP_RUNS_HOURS`        | _unset_                        | Keep runs for N hours instead of days (overrides `RETENTION_KEEP_RUNS_DAYS`; cleanup then defaults to hourly) |
 | `RETENTION_TRIM_LOGS_DAYS`         | `7`                            | Trim logs after N days (keeps summary only) |
 | `RETENTION_MAX_LOG_SIZE`           | `10000`                        | Max size for trimmed logs in bytes          |
 | `RETENTION_CLEANUP_INTERVAL_HOURS` | `24`                           | How often to run cleanup (in hours)         |
