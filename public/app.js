@@ -10,6 +10,9 @@ class SubsyncarrPlusClient {
     this.lastMessageAt = Date.now();
     this.reconnectTimer = null;
     this.polling = false;
+    this.engineStats = {}; // learned average duration (ms) per engine, from finished steps
+    this.countedSteps = new Set();
+    this.lastPercent = { runId: null, value: 0 };
 
     this.initWebSocket();
     this.setupEventHandlers();
@@ -116,6 +119,74 @@ class SubsyncarrPlusClient {
     document.querySelectorAll('.engine-elapsed[data-since]').forEach((el) => {
       el.textContent = this.formatElapsed(Date.now() - Number(el.dataset.since));
     });
+    this.updateLiveProgress();
+  }
+
+  // Engines don't report progress, so estimate it: the longer the current engine has been
+  // running compared with how long that engine usually takes, the further the bar moves
+  // through that step. It approaches but never reaches the end of a step, so the bar
+  // can't run ahead of reality, and the real completion event always moves it on.
+  learnEngineDurations() {
+    for (const file of this.state.files || []) {
+      let engines;
+      try {
+        engines = JSON.parse(file.engines || '{}');
+      } catch (e) {
+        continue;
+      }
+      for (const [engine, result] of Object.entries(engines)) {
+        const key = `${file.file_path}|${engine}`;
+        if (!result || !result.success || result.skipped || !(result.duration > 1000)) continue;
+        if (this.countedSteps.has(key)) continue;
+        this.countedSteps.add(key);
+        const stat = (this.engineStats[engine] = this.engineStats[engine] || { sum: 0, n: 0 });
+        stat.sum += result.duration;
+        stat.n += 1;
+      }
+    }
+  }
+
+  expectedEngineMs(engine) {
+    const stat = this.engineStats[engine];
+    if (stat && stat.n > 0) return stat.sum / stat.n;
+    const defaults = { alass: 90000, ffsubsync: 200000, autosubsync: 180000 };
+    return defaults[engine] || 120000;
+  }
+
+  stepFraction(file, now) {
+    if (!file.current_engine || !file.updated_at) return 0;
+    const ratio = Math.max(0, now - file.updated_at) / this.expectedEngineMs(file.current_engine);
+    // Linear up to 90% of the step, then a slow approach to 99% if the engine runs long.
+    return ratio <= 0.9 ? ratio : 0.9 + 0.09 * (1 - Math.exp(-(ratio - 0.9) * 3));
+  }
+
+  updateLiveProgress() {
+    const { currentRun } = this.state;
+    if (!currentRun || currentRun.status === 'completed' || !(currentRun.total_engines > 0)) return;
+
+    this.learnEngineDurations();
+    const now = Date.now();
+    const partial = this.state.isRunning
+      ? (this.state.files || [])
+          .filter((f) => f.status === 'processing')
+          .reduce((sum, f) => sum + this.stepFraction(f, now), 0)
+      : 0;
+
+    let percent = Math.min(((currentRun.completed_engines + partial) / currentRun.total_engines) * 100, 99.9);
+    if (currentRun.completed_engines >= currentRun.total_engines) percent = 100;
+
+    // Never move backwards within a run (e.g. when an estimate is replaced by the real result).
+    if (this.lastPercent.runId !== currentRun.id) this.lastPercent = { runId: currentRun.id, value: 0 };
+    percent = Math.max(percent, this.lastPercent.value);
+    this.lastPercent.value = percent;
+
+    const fill = document.getElementById('progressFill');
+    fill.style.width = `${percent}%`;
+    fill.classList.toggle('active', this.state.isRunning && percent < 100);
+    document.getElementById('progressText').textContent =
+      `${currentRun.completed} / ${currentRun.total_files} files (${percent.toFixed(1)}%)`;
+    document.getElementById('progressText').title =
+      `${currentRun.completed_engines} / ${currentRun.total_engines} engine steps done (current step is estimated)`;
   }
 
   handleMessage(msg) {
@@ -673,14 +744,7 @@ class SubsyncarrPlusClient {
 
     section.classList.remove('hidden');
 
-    // Use engine-level progress for more granular updates
-    const percent = currentRun.total_engines > 0 ? (currentRun.completed_engines / currentRun.total_engines) * 100 : 0;
-    document.getElementById('progressFill').style.width = `${percent}%`;
-    document.getElementById('progressFill').classList.toggle('active', this.state.isRunning && percent < 100);
-    document.getElementById('progressText').textContent =
-      `${currentRun.completed} / ${currentRun.total_files} files (${Math.round(percent)}%)`;
-    document.getElementById('progressText').title =
-      `${currentRun.completed_engines} / ${currentRun.total_engines} engine steps done`;
+    this.updateLiveProgress();
   }
 
   renderFiles() {
