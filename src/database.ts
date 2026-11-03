@@ -204,18 +204,36 @@ export class SubsyncarrPlusDatabase {
     const cutoffTime = Date.now() - olderThanDays * 24 * 60 * 60 * 1000;
 
     // Use transaction for atomicity
+    // Never touch a run that is still in progress (RETENTION_KEEP_RUNS_DAYS=0 makes the cutoff
+    // "now", which would otherwise wipe the active run and its files mid-flight). A run stuck in
+    // 'running' for over a day is a leftover from a crash and may be cleaned up.
+    const staleRunningCutoff = Date.now() - 24 * 60 * 60 * 1000;
     const deleteFiles = this.db.prepare(
-      'DELETE FROM file_results WHERE run_id IN (SELECT id FROM runs WHERE start_time < ?)',
+      `DELETE FROM file_results WHERE run_id IN (
+         SELECT id FROM runs WHERE start_time < ? AND NOT (status = 'running' AND start_time > ?)
+       )`,
     );
-    const deleteRuns = this.db.prepare('DELETE FROM runs WHERE start_time < ?');
+    const deleteRuns = this.db.prepare(
+      `DELETE FROM runs WHERE start_time < ? AND NOT (status = 'running' AND start_time > ?)`,
+    );
 
     const transaction = this.db.transaction(() => {
-      deleteFiles.run(cutoffTime);
-      const result = deleteRuns.run(cutoffTime);
+      deleteFiles.run(cutoffTime, staleRunningCutoff);
+      const result = deleteRuns.run(cutoffTime, staleRunningCutoff);
       return result.changes;
     });
 
     return transaction();
+  }
+
+  /**
+   * Ids of runs that are genuinely in progress (running and started within the last day).
+   */
+  getActiveRunIds(): string[] {
+    const rows = this.db
+      .prepare(`SELECT id FROM runs WHERE status = 'running' AND start_time > ?`)
+      .all(Date.now() - 24 * 60 * 60 * 1000) as Array<{ id: string }>;
+    return rows.map((r) => r.id);
   }
 
   /**

@@ -55,7 +55,7 @@ async function main() {
     }
 
     // Delete old log files
-    const deletedLogFiles = logFileManager.deleteOldLogs(retentionConfig.keepRunsDays);
+    const deletedLogFiles = logFileManager.deleteOldLogs(retentionConfig.keepRunsDays, db.getActiveRunIds());
     if (deletedLogFiles > 0) {
       console.log(`[${new Date().toISOString()}] Deleted ${deletedLogFiles} old log files`);
     }
@@ -78,7 +78,7 @@ async function main() {
     const db = stateManager.getDatabase();
     const logFileManager = stateManager.getLogFileManager();
     db.trimOldLogs(retentionConfig.trimLogsDays, retentionConfig.maxLogSizeBytes);
-    logFileManager.deleteOldLogs(retentionConfig.keepRunsDays);
+    logFileManager.deleteOldLogs(retentionConfig.keepRunsDays, db.getActiveRunIds());
     db.deleteOldRuns(retentionConfig.keepRunsDays);
     db.vacuum();
   }, 5000);

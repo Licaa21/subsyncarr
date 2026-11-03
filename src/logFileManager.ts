@@ -118,7 +118,7 @@ export class LogFileManager {
     }
   }
 
-  deleteOldLogs(keepDays: number): number {
+  deleteOldLogs(keepDays: number, protectedRunIds: string[] = []): number {
     const now = Date.now();
     const maxAgeMs = keepDays * 24 * 60 * 60 * 1000;
     let deletedCount = 0;
@@ -128,6 +128,9 @@ export class LogFileManager {
 
       for (const file of files) {
         if (!file.endsWith('.log')) continue;
+        // Keep the log of a run that is still in progress (and the one currently being written).
+        const runId = file.slice(0, -'.log'.length);
+        if (runId === this.currentRunId || protectedRunIds.includes(runId)) continue;
 
         const filePath = path.join(this.logDir, file);
         const stats = fs.statSync(filePath);
