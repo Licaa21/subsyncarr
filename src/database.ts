@@ -146,6 +146,21 @@ export class SubsyncarrPlusDatabase {
         CREATE INDEX idx_failure_tracking_skipped ON engine_failure_tracking(is_skipped);
       `);
     }
+
+    // Migration (user_version 1): alass used to crash on MKVs with font attachments
+    // (ffprobe streams without codec_long_name). That bug is fixed by the bundled ffprobe
+    // wrapper, so forget the failures it caused and give alass a clean slate, once.
+    const userVersion = this.db.pragma('user_version', { simple: true }) as number;
+    if (userVersion < 1) {
+      this.db
+        .prepare(
+          `UPDATE engine_failure_tracking
+           SET consecutive_failures = 0, is_skipped = 0, updated_at = ?
+           WHERE engine = 'alass'`,
+        )
+        .run(Date.now());
+      this.db.pragma('user_version = 1');
+    }
   }
 
   // Run methods
