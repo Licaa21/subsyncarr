@@ -1004,3 +1004,65 @@ td {
     font-size: 12px;
   }
 }
+
+/* Dark mode (follows the OS / browser setting) */
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --primary: #60a5fa;
+    --primary-dark: #3b82f6;
+    --success: #34d399;
+    --error: #f87171;
+    --warning: #fbbf24;
+    --background: #0f1115;
+    --card-bg: #1a1d24;
+    --border: #2d323c;
+    --text: #e5e7eb;
+    --text-secondary: #9ca3af;
+  }
+
+  .btn-primary {
+    background: #2563eb;
+  }
+
+  .btn-primary:hover {
+    background: #1d4ed8;
+  }
+
+  .btn-secondary:hover {
+    background: #3a404c;
+  }
+
+  .file-card {
+    background: #14171d;
+  }
+
+  .engine-result.success,
+  .status-badge.completed {
+    background: rgba(16, 185, 129, 0.18);
+    color: #6ee7b7;
+  }
+
+  .engine-result.error {
+    background: rgba(239, 68, 68, 0.18);
+    color: #fca5a5;
+  }
+
+  .status-badge.running {
+    background: rgba(59, 130, 246, 0.2);
+    color: #93c5fd;
+  }
+
+  .status-badge.cancelled {
+    background: rgba(245, 158, 11, 0.18);
+    color: #fcd34d;
+  }
+
+  .stat-completed {
+    color: #34d399;
+  }
+
+  .tree-row:hover {
+    background: rgba(96, 165, 250, 0.14);
+  }
+}

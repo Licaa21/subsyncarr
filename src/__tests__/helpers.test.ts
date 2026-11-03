@@ -44,6 +44,13 @@ posixOnly('execPromise', () => {
 
     const grandchildPid = parseInt(error.stdout.trim(), 10);
     expect(grandchildPid).toBeGreaterThan(0);
+    // A killed process stays visible to kill(pid, 0) as a zombie until its new
+    // parent reaps it (tini in the image, but not necessarily in other
+    // environments), so wait briefly for it to disappear instead of checking once.
+    const deadline = Date.now() + 5000;
+    while (isAlive(grandchildPid) && Date.now() < deadline) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
     expect(isAlive(grandchildPid)).toBe(false);
   }, 15000);
 });
