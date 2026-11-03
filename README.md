@@ -280,7 +280,7 @@ If the container is being killed due to OOM (Out Of Memory):
 
 Check that:
 
-1. Your subtitle files are named to match video files (e.g., `movie.mkv` and `movie.srt`)
+1. Your subtitle files are named to match video files (e.g., `movie.mkv` and `movie.srt`). Supported video extensions are `.mkv`, `.mp4`, `.avi`, `.mov` and `.ts`.
 2. `SCAN_PATHS` matches your mounted volumes
 3. Files haven't already been synced (check for `.ffsubsync.srt` files)
 4. Files aren't being auto-skipped due to repeated failures (check skip status in Web UI)

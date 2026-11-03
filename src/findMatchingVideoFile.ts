@@ -1,8 +1,8 @@
 import { existsSync } from 'fs';
 import { basename, dirname, join } from 'path';
 
-type VideoExtension = '.mkv' | '.mp4' | '.avi' | '.mov';
-const VIDEO_EXTENSIONS: VideoExtension[] = ['.mkv', '.mp4', '.avi', '.mov'];
+type VideoExtension = '.mkv' | '.mp4' | '.avi' | '.mov' | '.ts';
+const VIDEO_EXTENSIONS: VideoExtension[] = ['.mkv', '.mp4', '.avi', '.mov', '.ts'];
 
 export function findMatchingVideoFile(srtPath: string): string | null {
   const directory = dirname(srtPath);
